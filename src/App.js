@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Upload, RefreshCw, Trash2, AlertCircle, Search, ArrowUpDown } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Upload, RefreshCw, Trash2, AlertCircle, Search, ArrowUpDown, Database } from 'lucide-react';
 
 const TaskProgressTracker = () => {
   const [baselineData, setBaselineData] = useState([]);
@@ -8,6 +8,37 @@ const TaskProgressTracker = () => {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+  // Load data from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedBaseline = localStorage.getItem('taskTracker_baseline');
+      const savedCurrent = localStorage.getItem('taskTracker_current');
+      
+      if (savedBaseline) {
+        setBaselineData(JSON.parse(savedBaseline));
+      }
+      if (savedCurrent) {
+        setCurrentData(JSON.parse(savedCurrent));
+      }
+    } catch (err) {
+      console.error('Error loading saved data:', err);
+    }
+  }, []);
+
+  // Save to localStorage whenever data changes
+  useEffect(() => {
+    try {
+      if (baselineData.length > 0) {
+        localStorage.setItem('taskTracker_baseline', JSON.stringify(baselineData));
+      }
+      if (currentData.length > 0) {
+        localStorage.setItem('taskTracker_current', JSON.stringify(currentData));
+      }
+    } catch (err) {
+      console.error('Error saving data:', err);
+    }
+  }, [baselineData, currentData]);
 
   const parseTabDelimitedData = (text) => {
     const lines = text.trim().split('\n');
@@ -58,6 +89,14 @@ const TaskProgressTracker = () => {
     setError('');
     setSearchTerm('');
     setSortConfig({ key: null, direction: 'asc' });
+  };
+
+  const handleClearStorage = () => {
+    if (window.confirm('Are you sure you want to clear all saved data? This cannot be undone.')) {
+      localStorage.removeItem('taskTracker_baseline');
+      localStorage.removeItem('taskTracker_current');
+      handleReset();
+    }
   };
 
   const handleSort = (key) => {
@@ -135,7 +174,18 @@ const TaskProgressTracker = () => {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Task Progress Tracker</h1>
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-gray-900">Task Progress Tracker</h1>
+            {baselineData.length > 0 && (
+              <button
+                onClick={handleClearStorage}
+                className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+              >
+                <Database className="w-4 h-4" />
+                Clear Saved Data
+              </button>
+            )}
+          </div>
           
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -156,7 +206,7 @@ const TaskProgressTracker = () => {
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             {baselineData.length === 0 ? (
               <button
                 onClick={handleSetBaseline}
@@ -181,11 +231,18 @@ const TaskProgressTracker = () => {
                   className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
                 >
                   <Trash2 className="w-4 h-4" />
-                  Reset All
+                  Reset Session
                 </button>
               </>
             )}
           </div>
+
+          {baselineData.length > 0 && (
+            <div className="mt-3 text-xs text-gray-500 flex items-center gap-2">
+              <Database className="w-4 h-4" />
+              Data is automatically saved and will persist after page refresh
+            </div>
+          )}
         </div>
 
         {baselineData.length > 0 && (
