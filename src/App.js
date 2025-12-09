@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Upload, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
+import { Upload, RefreshCw, Trash2, AlertCircle, Search, ArrowUpDown } from 'lucide-react';
 
 const TaskProgressTracker = () => {
   const [baselineData, setBaselineData] = useState([]);
   const [currentData, setCurrentData] = useState([]);
   const [pasteText, setPasteText] = useState('');
   const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const parseTabDelimitedData = (text) => {
     const lines = text.trim().split('\n');
@@ -54,6 +56,15 @@ const TaskProgressTracker = () => {
     setCurrentData([]);
     setPasteText('');
     setError('');
+    setSearchTerm('');
+    setSortConfig({ key: null, direction: 'asc' });
+  };
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
   };
 
   const progressData = useMemo(() => {
@@ -78,8 +89,47 @@ const TaskProgressTracker = () => {
     });
   }, [baselineData, currentData]);
 
+  const filteredAndSortedData = useMemo(() => {
+    let filtered = progressData;
+
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(task => 
+        Object.values(task).some(value => 
+          String(value).toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      );
+    }
+
+    // Apply sorting
+    if (sortConfig.key) {
+      filtered = [...filtered].sort((a, b) => {
+        const aVal = String(a[sortConfig.key] || '');
+        const bVal = String(b[sortConfig.key] || '');
+        
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [progressData, searchTerm, sortConfig]);
+
   const changedCount = progressData.filter(item => item.statusChanged).length;
   const newCount = progressData.filter(item => item.isNew).length;
+
+  const SortableHeader = ({ label, sortKey }) => (
+    <th 
+      className="text-left p-3 font-medium text-gray-700 cursor-pointer hover:bg-gray-100 select-none"
+      onClick={() => handleSort(sortKey)}
+    >
+      <div className="flex items-center gap-2">
+        {label}
+        <ArrowUpDown className={`w-4 h-4 ${sortConfig.key === sortKey ? 'text-blue-600' : 'text-gray-400'}`} />
+      </div>
+    </th>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -140,10 +190,11 @@ const TaskProgressTracker = () => {
 
         {baselineData.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex items-center justify-between flex-wrap gap-4">
               <h2 className="text-xl font-semibold text-gray-900">Task Status</h2>
               <div className="flex gap-4 text-sm">
                 <span className="text-gray-600">Total: {progressData.length}</span>
+                <span className="text-gray-600">Showing: {filteredAndSortedData.length}</span>
                 {changedCount > 0 && (
                   <span className="text-amber-600 font-medium">Changed: {changedCount}</span>
                 )}
@@ -153,21 +204,34 @@ const TaskProgressTracker = () => {
               </div>
             </div>
 
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search tasks..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left p-3 font-medium text-gray-700">Project</th>
-                    <th className="text-left p-3 font-medium text-gray-700">Task ID</th>
-                    <th className="text-left p-3 font-medium text-gray-700">Subject</th>
-                    <th className="text-left p-3 font-medium text-gray-700">Status</th>
-                    <th className="text-left p-3 font-medium text-gray-700">Assigned</th>
-                    <th className="text-left p-3 font-medium text-gray-700">Due Date</th>
+                    <SortableHeader label="Project" sortKey="ProjectName" />
+                    <SortableHeader label="Task ID" sortKey="TaskID" />
+                    <SortableHeader label="Subject" sortKey="Subject" />
+                    <SortableHeader label="Status" sortKey="Status" />
+                    <SortableHeader label="Assigned" sortKey="Assigned" />
+                    <SortableHeader label="Due Date" sortKey="Task Due Date" />
                     <th className="text-left p-3 font-medium text-gray-700">Progress</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {progressData.map((task, idx) => (
+                  {filteredAndSortedData.map((task, idx) => (
                     <tr 
                       key={task.TaskID || idx}
                       className={`border-b border-gray-100 ${
@@ -207,6 +271,12 @@ const TaskProgressTracker = () => {
                 </tbody>
               </table>
             </div>
+
+            {filteredAndSortedData.length === 0 && searchTerm && (
+              <div className="text-center py-8 text-gray-500">
+                No tasks found matching "{searchTerm}"
+              </div>
+            )}
           </div>
         )}
 
