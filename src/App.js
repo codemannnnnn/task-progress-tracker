@@ -8,18 +8,24 @@ const TaskProgressTracker = () => {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [headers, setHeaders] = useState([]);
+  const [uniqueStatuses, setUniqueStatuses] = useState([]);
 
   // Load data from localStorage on mount
   useEffect(() => {
     try {
       const savedBaseline = localStorage.getItem('taskTracker_baseline');
       const savedCurrent = localStorage.getItem('taskTracker_current');
+      const savedHeaders = localStorage.getItem('taskTracker_headers');
       
       if (savedBaseline) {
         setBaselineData(JSON.parse(savedBaseline));
       }
       if (savedCurrent) {
         setCurrentData(JSON.parse(savedCurrent));
+      }
+      if (savedHeaders) {
+        setHeaders(JSON.parse(savedHeaders));
       }
     } catch (err) {
       console.error('Error loading saved data:', err);
@@ -35,10 +41,13 @@ const TaskProgressTracker = () => {
       if (currentData.length > 0) {
         localStorage.setItem('taskTracker_current', JSON.stringify(currentData));
       }
+      if (headers.length > 0) {
+        localStorage.setItem('taskTracker_headers', JSON.stringify(headers));
+      }
     } catch (err) {
       console.error('Error saving data:', err);
     }
-  }, [baselineData, currentData]);
+  }, [baselineData, currentData, headers]);
 
   const parseTabDelimitedData = (text) => {
     const lines = text.trim().split('\n');
@@ -47,6 +56,8 @@ const TaskProgressTracker = () => {
     }
 
     const headers = lines[0].split('\t').map(h => h.trim());
+    setHeaders(headers);
+    
     const rows = lines.slice(1).map(line => {
       const values = line.split('\t');
       const row = {};
@@ -95,6 +106,7 @@ const TaskProgressTracker = () => {
     if (window.confirm('Are you sure you want to clear all saved data? This cannot be undone.')) {
       localStorage.removeItem('taskTracker_baseline');
       localStorage.removeItem('taskTracker_current');
+      localStorage.removeItem('taskTracker_headers');
       handleReset();
     }
   };
@@ -107,26 +119,45 @@ const TaskProgressTracker = () => {
   };
 
   const progressData = useMemo(() => {
-    if (baselineData.length === 0) return [];
+    if (baselineData.length === 0 || headers.length === 0) return [];
+
+    // Find the ID column (prioritize TaskID, then first column)
+    const idColumn = headers.find(h => h.toLowerCase().includes('id')) || headers[0];
+    // Find the Status column
+    const statusColumn = headers.find(h => h.toLowerCase().includes('status')) || 'Status';
+
+    // Collect unique statuses
+    const statuses = new Set();
+    currentData.forEach(item => {
+      if (item[statusColumn]) {
+        statuses.add(item[statusColumn]);
+      }
+    });
+    baselineData.forEach(item => {
+      if (item[statusColumn]) {
+        statuses.add(item[statusColumn]);
+      }
+    });
+    setUniqueStatuses(Array.from(statuses));
 
     return currentData.map(current => {
-      const baseline = baselineData.find(b => b.TaskID === current.TaskID);
+      const baseline = baselineData.find(b => b[idColumn] === current[idColumn]);
       
       if (!baseline) {
         return { ...current, isNew: true, statusChanged: false };
       }
 
-      const statusChanged = baseline.Status !== current.Status;
+      const statusChanged = baseline[statusColumn] !== current[statusColumn];
       
       return {
         ...current,
         isNew: false,
         statusChanged,
-        oldStatus: baseline.Status,
-        statusChange: statusChanged ? `${baseline.Status} → ${current.Status}` : null
+        oldStatus: baseline[statusColumn],
+        statusChange: statusChanged ? `${baseline[statusColumn]} → ${current[statusColumn]}` : null
       };
     });
-  }, [baselineData, currentData]);
+  }, [baselineData, currentData, headers]);
 
   const filteredAndSortedData = useMemo(() => {
     let filtered = progressData;
@@ -169,6 +200,44 @@ const TaskProgressTracker = () => {
       </div>
     </th>
   );
+
+  // Generate consistent color for each status
+  const getStatusColor = (status) => {
+    if (!status) return 'bg-gray-100 text-gray-800';
+    
+    const statusLower = status.toLowerCase();
+    
+    // Common status patterns
+    if (statusLower.includes('complete') || statusLower.includes('done') || statusLower.includes('closed')) {
+      return 'bg-green-100 text-green-800';
+    }
+    if (statusLower.includes('progress') || statusLower.includes('development') || statusLower.includes('active')) {
+      return 'bg-blue-100 text-blue-800';
+    }
+    if (statusLower.includes('qa') || statusLower.includes('test') || statusLower.includes('review')) {
+      return 'bg-purple-100 text-purple-800';
+    }
+    if (statusLower.includes('blocked') || statusLower.includes('issue') || statusLower.includes('problem')) {
+      return 'bg-red-100 text-red-800';
+    }
+    if (statusLower.includes('pending') || statusLower.includes('waiting') || statusLower.includes('hold')) {
+      return 'bg-yellow-100 text-yellow-800';
+    }
+    if (statusLower.includes('new') || statusLower.includes('open')) {
+      return 'bg-cyan-100 text-cyan-800';
+    }
+    
+    // Generate color based on status string hash for consistency
+    const hash = status.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const colors = [
+      'bg-indigo-100 text-indigo-800',
+      'bg-pink-100 text-pink-800',
+      'bg-orange-100 text-orange-800',
+      'bg-teal-100 text-teal-800',
+      'bg-lime-100 text-lime-800',
+    ];
+    return colors[hash % colors.length];
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -278,39 +347,34 @@ const TaskProgressTracker = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
-                    <SortableHeader label="Project" sortKey="ProjectName" />
-                    <SortableHeader label="Task ID" sortKey="TaskID" />
-                    <SortableHeader label="Subject" sortKey="Subject" />
-                    <SortableHeader label="Status" sortKey="Status" />
-                    <SortableHeader label="Assigned" sortKey="Assigned" />
-                    <SortableHeader label="Due Date" sortKey="Task Due Date" />
+                    {headers.map((header) => (
+                      <SortableHeader key={header} label={header} sortKey={header} />
+                    ))}
                     <th className="text-left p-3 font-medium text-gray-700">Progress</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAndSortedData.map((task, idx) => (
                     <tr 
-                      key={task.TaskID || idx}
+                      key={task[headers[0]] || idx}
                       className={`border-b border-gray-100 ${
                         task.statusChanged ? 'bg-amber-50' : 
                         task.isNew ? 'bg-blue-50' : ''
                       }`}
                     >
-                      <td className="p-3 text-gray-900">{task.ProjectName}</td>
-                      <td className="p-3 text-gray-600 font-mono">{task.TaskID}</td>
-                      <td className="p-3 text-gray-900">{task.Subject}</td>
-                      <td className="p-3">
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                          task.Status === 'Complete' ? 'bg-green-100 text-green-800' :
-                          task.Status === 'Development' ? 'bg-blue-100 text-blue-800' :
-                          task.Status === 'Development QA' ? 'bg-purple-100 text-purple-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {task.Status}
-                        </span>
-                      </td>
-                      <td className="p-3 text-gray-700">{task.Assigned}</td>
-                      <td className="p-3 text-gray-600">{task['Task Due Date']?.split(' ')[0]}</td>
+                      {headers.map((header) => (
+                        <td key={header} className="p-3 text-gray-900">
+                          {header === 'Status' || header.toLowerCase().includes('status') ? (
+                            <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getStatusColor(task[header])}`}>
+                              {task[header]}
+                            </span>
+                          ) : header.toLowerCase().includes('date') ? (
+                            task[header]?.split(' ')[0]
+                          ) : (
+                            task[header]
+                          )}
+                        </td>
+                      ))}
                       <td className="p-3">
                         {task.isNew && (
                           <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
